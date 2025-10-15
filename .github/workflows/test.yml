@@ -1,0 +1,60 @@
+name: Test All Components
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-sdk-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd packages/sdk-python
+          pip install -e .[dev]
+      - name: Run tests
+        run: |
+          cd packages/sdk-python
+          pytest
+
+  test-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd packages/registry
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run tests
+        run: |
+          cd packages/registry
+          pytest
+
+  test-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd packages/cli
+          pip install -e .[dev]
+      - name: Run tests
+        run: |
+          cd packages/cli
+          pytest
