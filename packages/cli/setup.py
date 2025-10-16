@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="ecosystem-cli",
+    name="modularity-cli",
     version="0.1.0",
     description="CLI tool for Modularity",
     author="Modularity Contributors",
@@ -14,7 +14,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "ecosystem=ecosystem_cli:cli",
+            "modularity=modularity_cli.cli:cli",
         ],
     },
     python_requires=">=3.8",
