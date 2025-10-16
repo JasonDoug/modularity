@@ -331,7 +331,7 @@ def init(app_id, app_name, runtime, path):
 
 @cli.command()
 @click.option('--manifest', default='app.manifest.json', help='Path to manifest file')
-@click.option('--host', default='0.0.0.0', help='Host to bind to')
+@click.option('--host', default='127.0.0.1', help='Host to bind to (default: localhost only)')
 @click.option('--port', type=int, help='Port to bind to (overrides manifest)')
 def run(manifest, host, port):
     """Run an application in standalone mode"""
@@ -512,8 +512,15 @@ def _run_python_app(manifest_path: Path, host: str, port: Optional[int]):
         console.print(f"[red]Error: Standalone script not found: {standalone_script}[/red]")
         sys.exit(1)
 
+    # Pass host and port via environment variables
+    import os
+    env = os.environ.copy()
+    env['MODULE_HOST'] = host
+    if port:
+        env['MODULE_PORT'] = str(port)
+
     cmd = [sys.executable, str(standalone_script)]
-    subprocess.run(cmd, cwd=app_dir)
+    subprocess.run(cmd, cwd=app_dir, env=env, check=True)
 
 
 def _run_javascript_app(manifest_path: Path, host: str, port: Optional[int]):
@@ -525,8 +532,15 @@ def _run_javascript_app(manifest_path: Path, host: str, port: Optional[int]):
         console.print(f"[red]Error: Standalone script not found: {standalone_script}[/red]")
         sys.exit(1)
 
+    # Pass host and port via environment variables
+    import os
+    env = os.environ.copy()
+    env['MODULE_HOST'] = host
+    if port:
+        env['MODULE_PORT'] = str(port)
+
     cmd = ['node', str(standalone_script)]
-    subprocess.run(cmd, cwd=app_dir)
+    subprocess.run(cmd, cwd=app_dir, env=env, check=True)
 
 
 if __name__ == '__main__':

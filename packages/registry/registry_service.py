@@ -12,10 +12,17 @@ import requests
 from datetime import datetime
 import json
 from pathlib import Path
+from urllib.parse import urlparse
+import ipaddress
+import os
 
 
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS with specific allowed origins (security fix)
+# In production, set ALLOWED_ORIGINS environment variable to comma-separated list
+allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000').split(',')
+CORS(app, origins=allowed_origins, supports_credentials=True)
 
 # In-memory registry (can be replaced with Redis or database)
 registry: Dict[str, Dict[str, Any]] = {}
@@ -48,7 +55,7 @@ class RegistryStore:
         try:
             with open(self.storage_path, 'r') as f:
                 return json.load(f)
-        except Exception as e:
+        except (json.JSONDecodeError, OSError, IOError) as e:
             print(f"Error loading registry: {e}")
             return {}
 
@@ -56,16 +63,53 @@ class RegistryStore:
 store = RegistryStore()
 
 
+def is_safe_url(url: str) -> bool:
+    """
+    Validate URL to prevent SSRF attacks.
+    Only allows localhost and private network addresses for health checks.
+    """
+    try:
+        parsed = urlparse(url)
+
+        # Must have http or https scheme
+        if parsed.scheme not in ('http', 'https'):
+            return False
+
+        # Extract hostname
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Allow localhost
+        if hostname in ('localhost', '127.0.0.1', '::1'):
+            return True
+
+        # Allow private network ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        try:
+            ip = ipaddress.ip_address(hostname)
+            return ip.is_private or ip.is_loopback
+        except ValueError:
+            # Hostname is not an IP address - for now, reject non-IP hostnames
+            # In production, you might want to resolve DNS and check the IP
+            return False
+
+    except Exception:
+        return False
+
+
 def rebuild_capability_index():
     """Rebuild the capability index from current registry"""
     global capability_index
-    capability_index.clear()
 
-    for service_id, service_info in registry.items():
-        for capability in service_info.get('capabilities', []):
-            if capability not in capability_index:
-                capability_index[capability] = []
-            capability_index[capability].append(service_id)
+    # Acquire lock to prevent race conditions when modifying shared state
+    with registry_lock:
+        capability_index.clear()
+
+        for service_id, service_info in registry.items():
+            for capability in service_info.get('capabilities', []):
+                if capability not in capability_index:
+                    capability_index[capability] = []
+                capability_index[capability].append(service_id)
 
 
 def health_check_worker():
@@ -86,10 +130,16 @@ def health_check_worker():
 
                 location = service['location']
 
+            # Validate URL to prevent SSRF attacks
+            health_url = f"{location}/_module/health"
+            if not is_safe_url(health_url):
+                print(f"Skipping health check for {service_id}: URL not allowed (SSRF protection)")
+                continue
+
             # Perform health check
             try:
                 response = requests.get(
-                    f"{location}/_module/health",
+                    health_url,
                     timeout=HEALTH_CHECK_TIMEOUT
                 )
 
@@ -119,11 +169,39 @@ def health_check_worker():
 @app.route('/api/register', methods=['POST'])
 def register_service():
     """Register a new service in the ecosystem"""
+    # Validate JSON payload exists
+    if not request.json:
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+
     data = request.json
 
+    # Validate required fields exist
     required_fields = ['id', 'name', 'capabilities', 'location', 'mode']
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing required fields'}), 400
+
+    # Validate field types and formats
+    if not isinstance(data['id'], str) or not data['id'].strip():
+        return jsonify({'error': 'id must be a non-empty string'}), 400
+
+    if not isinstance(data['name'], str) or not data['name'].strip():
+        return jsonify({'error': 'name must be a non-empty string'}), 400
+
+    if not isinstance(data['capabilities'], list):
+        return jsonify({'error': 'capabilities must be a list'}), 400
+
+    if not all(isinstance(cap, str) for cap in data['capabilities']):
+        return jsonify({'error': 'All capabilities must be strings'}), 400
+
+    if not isinstance(data['location'], str) or not data['location'].strip():
+        return jsonify({'error': 'location must be a non-empty string'}), 400
+
+    # Validate location URL format
+    if not is_safe_url(data['location']):
+        return jsonify({'error': 'location must be a valid localhost or private network URL'}), 400
+
+    if not isinstance(data['mode'], str) or data['mode'] not in ('http', 'embedded', 'standalone'):
+        return jsonify({'error': 'mode must be one of: http, embedded, standalone'}), 400
 
     service_info = {
         'id': data['id'],
@@ -297,9 +375,26 @@ def get_stats():
 @app.route('/api/discover', methods=['POST'])
 def discover_services():
     """Discover services based on requirements"""
+    # Validate JSON payload exists
+    if not request.json:
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+
     data = request.json
     required_capabilities = data.get('capabilities', [])
     optional_capabilities = data.get('optional', [])
+
+    # Validate that capabilities are lists of strings
+    if not isinstance(required_capabilities, list):
+        return jsonify({'error': 'capabilities must be a list'}), 400
+
+    if not isinstance(optional_capabilities, list):
+        return jsonify({'error': 'optional must be a list'}), 400
+
+    if not all(isinstance(cap, str) for cap in required_capabilities):
+        return jsonify({'error': 'All required capabilities must be strings'}), 400
+
+    if not all(isinstance(cap, str) for cap in optional_capabilities):
+        return jsonify({'error': 'All optional capabilities must be strings'}), 400
 
     with registry_lock:
         matching_services = []
@@ -381,4 +476,8 @@ if __name__ == '__main__':
     print("  GET    /health                - Registry health check")
     print("=" * 50)
 
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Use 127.0.0.1 by default for security (localhost only)
+    # Set REGISTRY_HOST=0.0.0.0 in environment to bind to all interfaces
+    host = os.getenv('REGISTRY_HOST', '127.0.0.1')
+    port = int(os.getenv('REGISTRY_PORT', '5000'))
+    app.run(host=host, port=port, debug=False)
