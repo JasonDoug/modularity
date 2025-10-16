@@ -1,0 +1,35 @@
+{
+  "id": "hello-service",
+  "name": "Hello World Service",
+  "version": "1.0.0",
+  "type": "module",
+  "runtime": "python",
+  "modes": {
+    "standalone": true,
+    "embeddable": true,
+    "service": true
+  },
+  "provides": {
+    "capabilities": ["greet"],
+    "endpoints": [],
+    "events": [],
+    "commands": []
+  },
+  "requires": {
+    "capabilities": [],
+    "optional": []
+  },
+  "interfaces": {
+    "http": {
+      "port": 3100,
+      "basePath": "/api"
+    },
+    "module": {
+      "entry": "src/module.py",
+      "class": "HelloModule"
+    }
+  },
+  "config": {
+    "defaults": "config.defaults.json"
+  }
+}
