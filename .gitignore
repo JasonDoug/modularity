@@ -6,11 +6,16 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 *.egg-info/
 dist/
 build/
 .pytest_cache/
+
+# uv
+uv.lock
+.python-version
 
 # JavaScript
 node_modules/
@@ -50,8 +55,8 @@ Gemfile.lock
 .DS_Store
 Thumbs.db
 
-# Ecosystem
-.ecosystem/
+# Modularity
+.modularity/
 *.log
 
 # Build artifacts

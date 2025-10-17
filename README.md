@@ -3,7 +3,7 @@
 **A polymorphic service architecture platform enabling applications to run as standalone services, embedded modules, or distributed microservices without code changes.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
@@ -57,28 +57,41 @@ result = sdk.invoke_capability('greet', {'name': 'Alice'})
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- pip (Python package manager)
+- Python 3.9 or higher
+- [uv](https://github.com/astral-sh/uv) (ultra-fast Python package manager)
 
-### 1. Install Dependencies
+### 1. Install uv (if not already installed)
 
 ```bash
-# Install Python SDK dependencies
-cd packages/sdk-python
-pip install -r requirements.txt
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install Registry dependencies
-cd ../registry
-pip install -r requirements.txt
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or via pip
+pip install uv
 ```
 
-### 2. Start the Registry (Terminal 1)
+### 2. Install Dependencies
+
+```bash
+# From the project root - installs all workspace packages
+uv sync
+
+# This creates a .venv and installs:
+# - modularity-cli
+# - modularity-sdk
+# - modularity-registry
+# - All dependencies
+```
+
+### 3. Start the Registry (Terminal 1)
 
 The registry enables service discovery for distributed deployments:
 
 ```bash
-cd packages/registry
-python registry_service.py
+uv run --directory packages/registry python registry_service.py
 ```
 
 Output:
@@ -94,12 +107,11 @@ API Documentation:
 ==================================================
 ```
 
-### 3. Run Hello World Example (Terminal 2)
+### 4. Run Hello World Example (Terminal 2)
 
 ```bash
 cd examples/01-hello-world/hello-service
-pip install -r requirements.txt
-python src/standalone.py
+uv run python src/standalone.py
 ```
 
 Output:
@@ -111,7 +123,7 @@ HelloModule initialized with greeting: 'Hello'
  * Running on http://127.0.0.1:3100
 ```
 
-### 4. Test It (Terminal 3)
+### 5. Test It (Terminal 3)
 
 ```bash
 # Health check
@@ -159,7 +171,7 @@ curl -X POST http://localhost:3100/_module/invoke \
 #### 1. SDK (Runtime Library)
 - **Location:** `packages/sdk-python/`
 - **Purpose:** Load and execute modules in any deployment mode
-- **Key Classes:** `EcosystemSDK`, `ModuleInterface`, `ServiceLocator`
+- **Key Classes:** `ModularitySDK`, `ModuleInterface`, `ServiceLocator`
 - **Languages:** Python (implemented), JavaScript/Go/Rust (planned)
 
 #### 2. Registry (Service Discovery)
@@ -220,22 +232,22 @@ curl -X POST http://localhost:3100/_module/invoke \
 modularity/
 ├── packages/                    # Core platform components
 │   ├── sdk-python/             # Python SDK (✅ Complete)
-│   │   ├── ecosystem_sdk/      # SDK implementation
-│   │   │   ├── __init__.py    # EcosystemSDK, ModuleInterface, etc.
+│   │   ├── modularity_sdk/     # SDK implementation
+│   │   │   ├── __init__.py    # ModularitySDK, ModuleInterface, etc.
 │   │   │   └── ...
 │   │   ├── tests/              # SDK tests
-│   │   └── setup.py            # Package configuration
+│   │   └── pyproject.toml      # Package configuration
 │   │
 │   ├── registry/               # Service registry (✅ Complete)
 │   │   ├── registry_service.py # Flask-based registry service
 │   │   ├── tests/              # Registry tests
-│   │   └── requirements.txt
+│   │   └── pyproject.toml      # Package configuration
 │   │
 │   └── cli/                    # CLI tools (✅ Complete)
 │       ├── modularity_cli/     # CLI implementation
 │       │   └── cli.py         # Click-based commands
 │       ├── tests/              # CLI tests
-│       └── setup.py
+│       └── pyproject.toml      # Package configuration
 │
 ├── examples/                    # Working examples
 │   └── 01-hello-world/         # Minimal example (✅ Complete)
@@ -286,32 +298,31 @@ modularity/
 
 ```bash
 # Python SDK tests
-cd packages/sdk-python
-pytest tests/
+uv run --directory packages/sdk-python pytest tests/
 
 # Registry tests
-cd packages/registry
-pytest tests/
+uv run --directory packages/registry pytest tests/
 
 # CLI tests
-cd packages/cli
-pytest tests/
+uv run --directory packages/cli pytest tests/
 
 # Example tests
 cd examples/01-hello-world/hello-service
-python test_hello.py
+uv run python test_hello.py
+
+# Or run all tests from workspace root
+uv run pytest packages/*/tests/
 ```
 
 ### Manual Integration Test
 
 ```bash
 # Terminal 1: Start registry
-cd packages/registry
-python registry_service.py
+uv run --directory packages/registry python registry_service.py
 
 # Terminal 2: Start hello service
 cd examples/01-hello-world/hello-service
-python src/standalone.py
+uv run python src/standalone.py
 
 # Terminal 3: Test end-to-end
 curl -X POST http://localhost:3100/_module/invoke \
@@ -452,11 +463,11 @@ Different deployment modes for different environments:
 ```python
 # Development: Everything in-process (fast iteration)
 if ENV == 'development':
-    sdk = EcosystemSDK(mode='embedded')
+    sdk = ModularitySDK(mode='embedded')
 
 # Production: Distributed services (scalability)
 else:
-    sdk = EcosystemSDK(mode='distributed', registry='http://registry:5000')
+    sdk = ModularitySDK(mode='distributed', registry='http://registry:5000')
 ```
 
 ### 3. Testing Without Mocks
@@ -466,7 +477,7 @@ Test with real implementations, no network:
 ```python
 # Integration test
 def test_user_workflow():
-    sdk = EcosystemSDK()
+    sdk = ModularitySDK()
     auth = sdk.load_as_module('auth-service')
     users = sdk.load_as_module('user-service')
 

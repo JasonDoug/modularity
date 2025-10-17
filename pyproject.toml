@@ -1,0 +1,15 @@
+[project]
+name = "modularity-workspace"
+version = "0.1.0"
+description = "Modularity monorepo workspace"
+requires-python = ">=3.9"
+
+[tool.uv.workspace]
+members = [
+    "packages/cli",
+    "packages/sdk-python",
+    "packages/registry",
+]
+
+[dependency-groups]
+dev = []

@@ -1,5 +1,5 @@
 """
-Basic tests for Ecosystem SDK
+Basic tests for Modularity SDK
 """
 
 def test_import():

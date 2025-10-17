@@ -11,13 +11,13 @@ from pathlib import Path
 sdk_path = Path(__file__).parent.parent.parent.parent.parent / "packages" / "sdk-python"
 sys.path.insert(0, str(sdk_path))
 
-from ecosystem_sdk import EcosystemSDK
+from modularity_sdk import ModularitySDK
 
 
 if __name__ == "__main__":
     # Load the SDK with our manifest
     manifest_path = Path(__file__).parent.parent / "app.manifest.json"
-    sdk = EcosystemSDK(str(manifest_path))
+    sdk = ModularitySDK(str(manifest_path))
 
     # Run in standalone mode (starts HTTP server)
     print("=" * 50)

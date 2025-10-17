@@ -1,0 +1,13 @@
+[project]
+name = "hello-service"
+version = "1.0.0"
+description = "Hello World example service for Modularity"
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.1.1",
+    "flask-cors>=6.0.0",
+    "requests>=2.32.4",
+]
+
+[tool.uv]
+package = false  # This is an application, not a library

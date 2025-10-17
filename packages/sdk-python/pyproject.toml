@@ -1,0 +1,25 @@
+[project]
+name = "modularity-sdk"
+version = "0.1.0"
+description = "Modularity SDK for Python"
+authors = [
+    { name = "Modularity Contributors" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "flake8>=7.0.0",
+    "black>=23.12.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

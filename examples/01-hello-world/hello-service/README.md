@@ -28,13 +28,13 @@ A minimal "Hello World" service that demonstrates the absolute basics:
 
 ```bash
 cd examples/01-hello-world/hello-service
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 2. Run Standalone
 
 ```bash
-python src/standalone.py
+uv run python src/standalone.py
 ```
 
 The service will start on port 3100.
@@ -63,7 +63,7 @@ curl -X POST http://localhost:3100/_module/invoke \
 ### 4. Run Tests
 
 ```bash
-python test_hello.py
+uv run python test_hello.py
 ```
 
 ---
@@ -78,7 +78,7 @@ hello-service/
 │   ├── module.py             # Module implementation
 │   └── standalone.py         # Standalone entry point
 ├── test_hello.py             # Basic tests
-├── requirements.txt          # Dependencies
+├── pyproject.toml            # Dependencies (uv format)
 └── README.md                 # This file
 ```
 
@@ -124,7 +124,7 @@ class HelloModule(ModuleInterface):
 The `src/standalone.py` starts an HTTP server:
 
 ```python
-sdk = EcosystemSDK("app.manifest.json")
+sdk = ModularitySDK("app.manifest.json")
 sdk.run_standalone(port=3100)
 ```
 
@@ -184,10 +184,10 @@ curl -X POST http://localhost:3100/_module/invoke \
 ### Example 4: Use as Module (In-Process)
 
 ```python
-from ecosystem_sdk import EcosystemSDK
+from modularity_sdk import ModularitySDK
 
 # Load hello service as in-process module
-sdk = EcosystemSDK("app.manifest.json")
+sdk = ModularitySDK("app.manifest.json")
 hello = sdk.load_as_module({'default_greeting': 'Hi'})
 
 # Use it directly (no network calls!)
@@ -215,7 +215,7 @@ Edit `config.defaults.json`:
 ```bash
 export MODULE_HOST=0.0.0.0  # Bind to all interfaces
 export MODULE_PORT=3200     # Use different port
-python src/standalone.py
+uv run python src/standalone.py
 ```
 
 ### Via Runtime Config
@@ -274,7 +274,7 @@ curl -X POST http://localhost:3100/_module/invoke \
 
 ```bash
 # Start the service
-python src/standalone.py
+uv run python src/standalone.py
 
 # In another terminal:
 
@@ -303,7 +303,7 @@ curl -X POST http://localhost:3100/_module/invoke \
 ### Automated Testing
 
 ```bash
-python test_hello.py
+uv run python test_hello.py
 ```
 
 Expected output:
@@ -327,21 +327,20 @@ Expected output:
 ### Register with Registry
 
 ```bash
-# Start registry first
-cd packages/registry
-python registry_service.py
+# Start registry first (from workspace root)
+uv run --directory packages/registry python registry_service.py
 
 # Start hello service (it auto-registers)
 cd examples/01-hello-world/hello-service
-python src/standalone.py
+uv run python src/standalone.py
 ```
 
 ### Discover and Use from Another Service
 
 ```python
-from ecosystem_sdk import EcosystemSDK
+from modularity_sdk import ModularitySDK
 
-sdk = EcosystemSDK()
+sdk = ModularitySDK()
 
 # Find service by capability
 result = sdk.invoke_capability('greet', {'name': 'Charlie'})
@@ -358,7 +357,7 @@ If port 3100 is already taken:
 
 ```bash
 export MODULE_PORT=3200
-python src/standalone.py
+uv run python src/standalone.py
 ```
 
 ### Import Errors
@@ -366,13 +365,16 @@ python src/standalone.py
 Make sure you're in the monorepo root or have installed the SDK:
 
 ```bash
-# Option 1: Run from monorepo
+# Option 1: Run from monorepo with workspace dependencies
 cd /path/to/modularity
-python examples/01-hello-world/hello-service/src/standalone.py
+uv sync  # Installs all workspace packages
+cd examples/01-hello-world/hello-service
+uv run python src/standalone.py
 
-# Option 2: Install SDK in development mode
-cd packages/sdk-python
-pip install -e .
+# Option 2: Install just the example
+cd examples/01-hello-world/hello-service
+uv sync  # Installs example dependencies
+uv run python src/standalone.py
 ```
 
 ### Module Not Loading
