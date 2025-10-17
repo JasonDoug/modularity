@@ -9,7 +9,7 @@ from pathlib import Path
 sdk_path = Path(__file__).parent.parent.parent.parent / "packages" / "sdk-python"
 sys.path.insert(0, str(sdk_path))
 
-from ecosystem_sdk import EcosystemSDK
+from modularity_sdk import ModularitySDK
 
 
 def test_hello_module():
@@ -17,7 +17,7 @@ def test_hello_module():
 
     # Load as module
     manifest_path = Path(__file__).parent / "app.manifest.json"
-    sdk = EcosystemSDK(str(manifest_path))
+    sdk = ModularitySDK(str(manifest_path))
     hello = sdk.load_as_module({'default_greeting': 'Hi'})
 
     # Test capabilities

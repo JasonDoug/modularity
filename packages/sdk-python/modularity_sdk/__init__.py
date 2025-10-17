@@ -1,5 +1,5 @@
 """
-Ecosystem SDK - Python Implementation
+Modularity SDK - Python Implementation
 Allows apps to run standalone or as modules within larger applications
 """
 
@@ -186,7 +186,7 @@ class EventBus:
                 self._subscribers[event_name].remove(handler)
 
 
-class EcosystemSDK:
+class ModularitySDK:
     """Main SDK class for ecosystem integration"""
 
     def __init__(self, manifest_path: str = "app.manifest.json",
@@ -343,7 +343,7 @@ class EcosystemSDK:
     def load_local_module(self, module_path: str, config: Optional[Dict] = None) -> ModuleInterface:
         """Load another module from the local filesystem"""
         module_manifest_path = Path(module_path) / "app.manifest.json"
-        module_sdk = EcosystemSDK(str(module_manifest_path), self.registry_url)
+        module_sdk = ModularitySDK(str(module_manifest_path), self.registry_url)
         return module_sdk.load_as_module(config or {})
 
 

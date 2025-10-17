@@ -1,5 +1,5 @@
 """
-Tests for the Ecosystem Registry Service
+Tests for the Modularity Registry Service
 """
 
 import pytest
@@ -596,7 +596,7 @@ class TestHealthCheck:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['status'] == 'healthy'
-        assert data['service'] == 'ecosystem-registry'
+        assert data['service'] == 'modularity-registry'
         assert 'timestamp' in data
 
 

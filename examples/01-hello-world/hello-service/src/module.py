@@ -11,7 +11,7 @@ from pathlib import Path
 sdk_path = Path(__file__).parent.parent.parent.parent.parent / "packages" / "sdk-python"
 sys.path.insert(0, str(sdk_path))
 
-from ecosystem_sdk import ModuleInterface
+from modularity_sdk import ModuleInterface
 
 
 class HelloModule(ModuleInterface):

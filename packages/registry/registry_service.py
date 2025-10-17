@@ -1,5 +1,5 @@
 """
-Ecosystem Registry Service
+Modularity Registry Service
 Central service for discovering and managing modules in the ecosystem
 """
 
@@ -434,7 +434,7 @@ def registry_health():
     """Health check for the registry itself"""
     return jsonify({
         'status': 'healthy',
-        'service': 'ecosystem-registry',
+        'service': 'modularity-registry',
         'timestamp': datetime.now().isoformat()
     })
 
@@ -460,7 +460,7 @@ if __name__ == '__main__':
     init_registry()
 
     print("=" * 50)
-    print("Ecosystem Registry Service")
+    print("Modularity Registry Service")
     print("=" * 50)
     print("Starting on http://localhost:5000")
     print("API Documentation:")

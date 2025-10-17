@@ -1,5 +1,5 @@
 """
-Basic tests for the Ecosystem SDK
+Basic tests for the Modularity SDK
 """
 
 import pytest
@@ -7,13 +7,13 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from ecosystem_sdk import (
+from modularity_sdk import (
     ModuleInterface,
     ServiceInfo,
     ServiceProxy,
     ServiceLocator,
     EventBus,
-    EcosystemSDK,
+    ModularitySDK,
     create_manifest_template
 )
 
@@ -62,7 +62,7 @@ class TestServiceProxy:
         proxy = ServiceProxy(service_info)
         assert proxy.service_info == service_info
 
-    @patch('ecosystem_sdk.requests.post')
+    @patch('modularity_sdk.requests.post')
     def test_invoke_http(self, mock_post):
         """Test HTTP invocation"""
         mock_response = Mock()
@@ -105,7 +105,7 @@ class TestServiceLocator:
         locator = ServiceLocator("http://localhost:5000")
         assert locator.registry_url == "http://localhost:5000"
 
-    @patch('ecosystem_sdk.requests.get')
+    @patch('modularity_sdk.requests.get')
     def test_get_capability(self, mock_get):
         """Test finding a service by capability"""
         mock_response = Mock()
@@ -124,7 +124,7 @@ class TestServiceLocator:
         assert isinstance(proxy, ServiceProxy)
         assert proxy.service_info.id == 'test-service'
 
-    @patch('ecosystem_sdk.requests.get')
+    @patch('modularity_sdk.requests.get')
     def test_get_capability_uses_cache(self, mock_get):
         """Test that service locator caches results"""
         mock_response = Mock()
@@ -224,8 +224,8 @@ class TestEventBus:
         assert len(received_data) == 0
 
 
-class TestEcosystemSDK:
-    """Test EcosystemSDK class"""
+class TestModularitySDK:
+    """Test ModularitySDK class"""
 
     def test_load_manifest(self):
         """Test loading a manifest file"""
@@ -243,14 +243,14 @@ class TestEcosystemSDK:
             with open(manifest_path, 'w') as f:
                 json.dump(manifest_data, f)
 
-            sdk = EcosystemSDK(str(manifest_path))
+            sdk = ModularitySDK(str(manifest_path))
             assert sdk.manifest['id'] == 'test-app'
             assert sdk.manifest['name'] == 'Test App'
 
     def test_load_manifest_not_found(self):
         """Test loading a non-existent manifest raises error"""
         with pytest.raises(FileNotFoundError):
-            EcosystemSDK("/nonexistent/path/app.manifest.json")
+            ModularitySDK("/nonexistent/path/app.manifest.json")
 
     def test_config_loading_from_env(self):
         """Test loading config from environment variables"""
@@ -269,10 +269,10 @@ class TestEcosystemSDK:
                 json.dump(manifest_data, f)
 
             with patch.dict('os.environ', {'TEST_APP_PORT': '8080'}):
-                sdk = EcosystemSDK(str(manifest_path))
+                sdk = ModularitySDK(str(manifest_path))
                 assert sdk.config.get('port') == '8080'
 
-    @patch('ecosystem_sdk.requests.get')
+    @patch('modularity_sdk.requests.get')
     def test_invoke_capability(self, mock_get):
         """Test invoking a remote capability"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -300,10 +300,10 @@ class TestEcosystemSDK:
             }
             mock_get.return_value = mock_response
 
-            sdk = EcosystemSDK(str(manifest_path))
+            sdk = ModularitySDK(str(manifest_path))
 
             # Mock the actual capability invocation
-            with patch('ecosystem_sdk.requests.post') as mock_post:
+            with patch('modularity_sdk.requests.post') as mock_post:
                 mock_post_response = Mock()
                 mock_post_response.json.return_value = {"result": "success"}
                 mock_post.return_value = mock_post_response
@@ -327,7 +327,7 @@ class TestEcosystemSDK:
             with open(manifest_path, 'w') as f:
                 json.dump(manifest_data, f)
 
-            sdk = EcosystemSDK(str(manifest_path))
+            sdk = ModularitySDK(str(manifest_path))
             received_data = []
 
             def handler(data):

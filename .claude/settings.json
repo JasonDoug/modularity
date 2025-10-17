@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "SessionStart": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "session-start"
+      ],
+      "background": true,
+      "description": "Initialize Claude Code Rewind session tracking"
+    },
+    "PreToolUse": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "pre-tool-use"
+      ],
+      "background": true,
+      "description": "Capture pre-change state"
+    },
+    "PostToolUse": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "post-tool-use"
+      ],
+      "background": true,
+      "description": "Create automatic snapshot after tool use"
+    },
+    "SubagentStart": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "subagent-start"
+      ],
+      "background": true,
+      "description": "Track subagent delegation"
+    },
+    "SubagentStop": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "subagent-stop"
+      ],
+      "background": true,
+      "description": "Capture subagent work completion"
+    },
+    "Error": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "error"
+      ],
+      "background": true,
+      "description": "Auto-suggest rollback on errors"
+    },
+    "SessionEnd": {
+      "command": "claude-rewind",
+      "args": [
+        "hook-handler",
+        "session-end"
+      ],
+      "background": true,
+      "description": "Finalize session tracking"
+    }
+  }
+}
