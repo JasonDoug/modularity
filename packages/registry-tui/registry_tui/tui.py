@@ -37,7 +37,7 @@ class ServiceListItem(ListItem):
         """Update the service data and label"""
         self.service_data = service_data
         status = service_data.get('status', 'unknown')
-        name = service_data.get('name', service_id)
+        name = service_data.get('name', self.service_id)
 
         # Status indicator
         status_icon = "●" if status == "active" else "○"

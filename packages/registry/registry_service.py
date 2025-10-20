@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import ipaddress
 import os
-from queue import Queue
+from queue import Queue, Full, Empty
 
 
 app = Flask(__name__)
@@ -25,6 +25,13 @@ app = Flask(__name__)
 # In production, set ALLOWED_ORIGINS environment variable to comma-separated list
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000').split(',')
 CORS(app, origins=allowed_origins, supports_credentials=True)
+
+# Invocation tracking authentication
+# Set REGISTRY_TRACK_TOKEN to require authentication for /api/track/invocation
+# Use REGISTRY_ALLOW_INSECURE=true or FLASK_ENV=development to disable in dev
+REGISTRY_TRACK_TOKEN = os.getenv('REGISTRY_TRACK_TOKEN')
+REGISTRY_ALLOW_INSECURE = os.getenv('REGISTRY_ALLOW_INSECURE', '').lower() in ('true', '1', 'yes')
+FLASK_ENV = os.getenv('FLASK_ENV', 'production')
 
 # In-memory registry (can be replaced with Redis or database)
 registry: Dict[str, Dict[str, Any]] = {}
@@ -95,12 +102,12 @@ def broadcast_event(event_type: str, data: dict):
     }
 
     with sse_lock:
-        for client_queue in sse_clients[:]:  # Use slice to avoid modification during iteration
+        for client_queue in sse_clients[:]:  # Iterate over a copy
             try:
                 client_queue.put_nowait(event)
-            except:
-                # Client queue is full or disconnected, skip
-                pass
+            except Full:
+                # Slow client: drop it to prevent unbounded growth
+                sse_clients.remove(client_queue)
 
 
 def is_safe_url(url: str) -> bool:
@@ -513,7 +520,7 @@ def registry_health():
 def stream_events():
     """Server-Sent Events endpoint for real-time registry updates"""
     def generate():
-        q = Queue()
+        q = Queue(maxsize=1000)
 
         # Register this client
         with sse_lock:
@@ -528,10 +535,14 @@ def stream_events():
             }
             yield f"data: {json.dumps(initial_event)}\n\n"
 
-            # Stream events as they arrive
+            # Stream events as they arrive (with keep-alive)
             while True:
-                event = q.get()  # Blocks until event available
-                yield f"data: {json.dumps(event)}\n\n"
+                try:
+                    event = q.get(timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except Empty:
+                    # SSE comment to keep intermediaries from closing idle connection
+                    yield ": keep-alive\n\n"
         finally:
             # Unregister this client on disconnect
             with sse_lock:
@@ -552,6 +563,12 @@ def stream_events():
 @app.route('/api/track/invocation', methods=['POST'])
 def track_invocation():
     """Track a capability invocation between services"""
+    # Authenticate request if token is configured (unless in dev mode or insecure mode)
+    if REGISTRY_TRACK_TOKEN and not REGISTRY_ALLOW_INSECURE and FLASK_ENV != 'development':
+        token = request.headers.get('X-Registry-Token')
+        if not token or token != REGISTRY_TRACK_TOKEN:
+            return jsonify({'error': 'Unauthorized: Invalid or missing X-Registry-Token header'}), 401
+
     if not request.json:
         return jsonify({'error': 'Invalid JSON payload'}), 400
 
