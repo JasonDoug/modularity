@@ -23,16 +23,32 @@ uv sync
 
 ## Usage
 
-Start the Registry TUI:
+**Important**: The Registry must be running before you start the TUI.
+
+### Start the Registry
+
+From the workspace root:
 
 ```bash
-uv run modularity-tui
+cd packages/registry
+uv run python registry_service.py
+```
+
+The registry will start on `http://localhost:5000` by default.
+
+### Start the TUI
+
+From the workspace root:
+
+```bash
+cd packages/registry-tui
+uv run python -m registry_tui.tui
 ```
 
 Or specify a custom registry URL:
 
 ```bash
-uv run modularity-tui --registry-url http://localhost:5000
+uv run python -m registry_tui.tui --registry-url http://localhost:5000
 ```
 
 ## Keyboard Shortcuts
@@ -72,10 +88,22 @@ uv run modularity-tui --registry-url http://localhost:5000
 
 ## Development
 
-Run with development mode for hot reloading:
+Run with development mode for hot reloading (from the registry-tui directory):
 
 ```bash
+cd packages/registry-tui
 uv run textual run --dev registry_tui/tui.py
+```
+
+Or use the Textual console for debugging:
+
+```bash
+# Terminal 1: Start the console
+textual console
+
+# Terminal 2: Run the TUI
+cd packages/registry-tui
+uv run python -m registry_tui.tui
 ```
 
 ## Architecture

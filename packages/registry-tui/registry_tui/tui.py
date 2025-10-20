@@ -28,10 +28,20 @@ class ServiceListItem(ListItem):
     """A list item representing a service"""
 
     def __init__(self, service_id: str, service_data: Dict[str, Any]):
-        super().__init__()
         self.service_id = service_id
         self.service_data = service_data
-        self.update_data(service_data)
+
+        # Format label text
+        status = service_data.get('status', 'unknown')
+        name = service_data.get('name', self.service_id)
+        status_icon = "●" if status == "active" else "○"
+        status_color = "green" if status == "active" else "red"
+        cap_count = len(service_data.get('capabilities', []))
+        label_text = f"[{status_color}]{status_icon}[/] {name} [{cap_count} cap{'s' if cap_count != 1 else ''}]"
+
+        # Initialize ListItem with a Label child
+        super().__init__(Label(label_text))
+        self._label = self.children[0]
 
     def update_data(self, service_data: Dict[str, Any]):
         """Update the service data and label"""
@@ -50,7 +60,8 @@ class ServiceListItem(ListItem):
         cap_count = len(service_data.get('capabilities', []))
         label_text += f" [{cap_count} cap{'s' if cap_count != 1 else ''}]"
 
-        self.update(label_text)
+        # Update the label widget
+        self._label.update(label_text)
 
 
 class ServiceListWidget(Vertical):

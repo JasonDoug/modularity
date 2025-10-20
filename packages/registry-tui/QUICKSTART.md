@@ -19,21 +19,7 @@ uv run python registry_service.py
 
 The registry will start on `http://localhost:5000` by default.
 
-## Step 2: (Optional) Populate Test Data
-
-To see the TUI in action with sample data:
-
-```bash
-cd packages/registry-tui
-uv run python populate_test_data.py
-```
-
-This will create:
-- 5 active services (Auth, Database, API Gateway, Cache, Email)
-- Multiple capability connections between services
-- Sample metrics and statistics
-
-## Step 3: Launch the TUI
+## Step 2: Launch the TUI
 
 ```bash
 cd packages/registry-tui
@@ -107,18 +93,55 @@ All updates are delivered via Server-Sent Events (SSE) from the registry.
 
 ### No services shown
 - Verify services are registered: `curl http://localhost:5000/api/services`
-- Try populating test data with the script in Step 2
+- Make sure you've registered some services first (see "Registering Services" section below)
 
 ### SSE connection issues
 - Check that `/api/events` endpoint is accessible
 - Verify no firewall is blocking the connection
 
+## Registering Services
+
+To see services in the TUI, you need to register them with the Registry. Here are a few ways:
+
+### Method 1: Using curl (for testing)
+
+```bash
+curl -X POST http://localhost:5000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "my-service",
+    "name": "My Test Service",
+    "version": "1.0.0",
+    "capabilities": ["test.capability"],
+    "location": "http://localhost:3001",
+    "mode": "http"
+  }'
+```
+
+### Method 2: Using the Modularity SDK
+
+Create a service using the SDK (see SDK documentation for full details):
+
+```python
+from modularity_sdk import ModularitySDK
+
+sdk = ModularitySDK()
+sdk.start(host="0.0.0.0", port=3001)
+```
+
+The SDK will automatically register your service with the Registry.
+
+### Method 3: Check existing examples
+
+Look at the examples in the `examples/` directory for working service implementations.
+
 ## Advanced Usage
 
 ### Development Mode
-For TUI development with hot reloading:
+For TUI development with hot reloading (from the registry-tui directory):
 
 ```bash
+cd packages/registry-tui
 uv run textual run --dev registry_tui/tui.py
 ```
 
@@ -126,8 +149,11 @@ uv run textual run --dev registry_tui/tui.py
 Debug the TUI in a separate terminal:
 
 ```bash
+# Terminal 1: Start the console
 textual console
-# In another terminal:
+
+# Terminal 2: Run the TUI
+cd packages/registry-tui
 uv run python -m registry_tui.tui
 ```
 
