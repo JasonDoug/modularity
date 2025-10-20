@@ -9,6 +9,7 @@ members = [
     "packages/cli",
     "packages/sdk-python",
     "packages/registry",
+    "packages/registry-tui",
 ]
 
 [dependency-groups]

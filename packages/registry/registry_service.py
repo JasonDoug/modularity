@@ -3,9 +3,10 @@ Modularity Registry Service
 Central service for discovering and managing modules in the ecosystem
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass, asdict
 import time
 import threading
 import requests
@@ -15,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import ipaddress
 import os
+from queue import Queue, Full, Empty
 
 
 app = Flask(__name__)
@@ -24,10 +26,38 @@ app = Flask(__name__)
 allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000').split(',')
 CORS(app, origins=allowed_origins, supports_credentials=True)
 
+# Invocation tracking authentication
+# Set REGISTRY_TRACK_TOKEN to require authentication for /api/track/invocation
+# Use REGISTRY_ALLOW_INSECURE=true or FLASK_ENV=development to disable in dev
+REGISTRY_TRACK_TOKEN = os.getenv('REGISTRY_TRACK_TOKEN')
+REGISTRY_ALLOW_INSECURE = os.getenv('REGISTRY_ALLOW_INSECURE', '').lower() in ('true', '1', 'yes')
+FLASK_ENV = os.getenv('FLASK_ENV', 'production')
+
 # In-memory registry (can be replaced with Redis or database)
 registry: Dict[str, Dict[str, Any]] = {}
 capability_index: Dict[str, List[str]] = {}  # capability -> [service_ids]
 registry_lock = threading.Lock()
+
+# Server-Sent Events (SSE) for real-time updates
+sse_clients: List[Queue] = []
+sse_lock = threading.Lock()
+
+# Connection tracking data structures
+@dataclass
+class ConnectionInfo:
+    """Tracks connection between a consumer and provider service"""
+    consumer_id: str
+    provider_id: str
+    capability: str
+    first_seen: str  # ISO datetime
+    last_seen: str   # ISO datetime
+    request_count: int = 0
+    success_count: int = 0
+    total_latency_ms: float = 0.0
+
+# Track connections: consumer_id -> List[ConnectionInfo]
+connections: Dict[str, List[ConnectionInfo]] = {}
+connections_lock = threading.Lock()
 
 # Health check configuration
 HEALTH_CHECK_INTERVAL = 30  # seconds
@@ -61,6 +91,23 @@ class RegistryStore:
 
 
 store = RegistryStore()
+
+
+def broadcast_event(event_type: str, data: dict):
+    """Broadcast event to all connected SSE clients"""
+    event = {
+        'event': event_type,
+        'timestamp': datetime.now().isoformat(),
+        'data': data
+    }
+
+    with sse_lock:
+        for client_queue in sse_clients[:]:  # Iterate over a copy
+            try:
+                client_queue.put_nowait(event)
+            except Full:
+                # Slow client: drop it to prevent unbounded growth
+                sse_clients.remove(client_queue)
 
 
 def is_safe_url(url: str) -> bool:
@@ -137,6 +184,7 @@ def health_check_worker():
                 continue
 
             # Perform health check
+            old_status = None
             try:
                 response = requests.get(
                     health_url,
@@ -145,6 +193,7 @@ def health_check_worker():
 
                 with registry_lock:
                     if service_id in registry:
+                        old_status = registry[service_id].get('status')
                         if response.status_code == 200:
                             registry[service_id]['status'] = 'active'
                             registry[service_id]['failed_checks'] = 0
@@ -162,8 +211,17 @@ def health_check_worker():
                 if service_id in registry:
                     failed = registry[service_id].get('failed_checks', 0)
                     if failed >= MAX_FAILED_CHECKS:
+                        old_status = registry[service_id].get('status')
                         registry[service_id]['status'] = 'inactive'
                         print(f"Service {service_id} marked as inactive after {failed} failed checks")
+
+                        # Broadcast status change event
+                        if old_status != 'inactive':
+                            broadcast_event('service.status_changed', {
+                                'id': service_id,
+                                'old_status': old_status,
+                                'new_status': 'inactive'
+                            })
 
 
 @app.route('/api/register', methods=['POST'])
@@ -230,6 +288,9 @@ def register_service():
         # Save to disk
         store.save(registry)
 
+    # Broadcast service registration event
+    broadcast_event('service.registered', service_info)
+
     return jsonify({
         'message': 'Service registered successfully',
         'service_id': data['id']
@@ -242,6 +303,8 @@ def unregister_service(service_id: str):
     with registry_lock:
         if service_id not in registry:
             return jsonify({'error': 'Service not found'}), 404
+
+        service_info = registry[service_id].copy()
 
         # Remove from capability index
         service_caps = registry[service_id]['capabilities']
@@ -259,6 +322,12 @@ def unregister_service(service_id: str):
 
         # Save to disk
         store.save(registry)
+
+    # Broadcast service unregistration event
+    broadcast_event('service.unregistered', {
+        'id': service_id,
+        'name': service_info.get('name', 'Unknown')
+    })
 
     return jsonify({'message': 'Service unregistered successfully'}), 200
 
@@ -341,11 +410,19 @@ def heartbeat(service_id: str):
         if service_id not in registry:
             return jsonify({'error': 'Service not found'}), 404
 
+        old_status = registry[service_id].get('status')
         registry[service_id]['last_seen'] = datetime.now().isoformat()
         registry[service_id]['status'] = 'active'
         registry[service_id]['failed_checks'] = 0
 
-        return jsonify({'message': 'Heartbeat received'})
+    # Broadcast heartbeat event (only if status changed)
+    if old_status != 'active':
+        broadcast_event('service.heartbeat', {
+            'id': service_id,
+            'status': 'active'
+        })
+
+    return jsonify({'message': 'Heartbeat received'})
 
 
 @app.route('/api/stats', methods=['GET'])
@@ -439,6 +516,213 @@ def registry_health():
     })
 
 
+@app.route('/api/events')
+def stream_events():
+    """Server-Sent Events endpoint for real-time registry updates"""
+    def generate():
+        q = Queue(maxsize=1000)
+
+        # Register this client
+        with sse_lock:
+            sse_clients.append(q)
+
+        try:
+            # Send initial connection event
+            initial_event = {
+                'event': 'connected',
+                'timestamp': datetime.now().isoformat(),
+                'data': {'message': 'Connected to Modularity Registry event stream'}
+            }
+            yield f"data: {json.dumps(initial_event)}\n\n"
+
+            # Stream events as they arrive (with keep-alive)
+            while True:
+                try:
+                    event = q.get(timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except Empty:
+                    # SSE comment to keep intermediaries from closing idle connection
+                    yield ": keep-alive\n\n"
+        finally:
+            # Unregister this client on disconnect
+            with sse_lock:
+                if q in sse_clients:
+                    sse_clients.remove(q)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
+
+
+@app.route('/api/track/invocation', methods=['POST'])
+def track_invocation():
+    """Track a capability invocation between services"""
+    # Authenticate request if token is configured (unless in dev mode or insecure mode)
+    if REGISTRY_TRACK_TOKEN and not REGISTRY_ALLOW_INSECURE and FLASK_ENV != 'development':
+        token = request.headers.get('X-Registry-Token')
+        if not token or token != REGISTRY_TRACK_TOKEN:
+            return jsonify({'error': 'Unauthorized: Invalid or missing X-Registry-Token header'}), 401
+
+    if not request.json:
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+
+    data = request.json
+    required = ['consumer_id', 'provider_id', 'capability', 'success']
+    if not all(k in data for k in required):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    consumer_id = data['consumer_id']
+    provider_id = data['provider_id']
+    capability = data['capability']
+    success = data['success']
+    latency_ms = data.get('latency_ms', 0.0)
+
+    now = datetime.now().isoformat()
+
+    with connections_lock:
+        # Find or create connection record
+        if consumer_id not in connections:
+            connections[consumer_id] = []
+
+        conn_list = connections[consumer_id]
+        conn = next(
+            (c for c in conn_list
+             if c.provider_id == provider_id and c.capability == capability),
+            None
+        )
+
+        if conn is None:
+            # New connection
+            conn = ConnectionInfo(
+                consumer_id=consumer_id,
+                provider_id=provider_id,
+                capability=capability,
+                first_seen=now,
+                last_seen=now,
+                request_count=1,
+                success_count=1 if success else 0,
+                total_latency_ms=latency_ms
+            )
+            conn_list.append(conn)
+        else:
+            # Update existing connection
+            conn.last_seen = now
+            conn.request_count += 1
+            if success:
+                conn.success_count += 1
+            conn.total_latency_ms += latency_ms
+
+    # Broadcast invocation event
+    broadcast_event('capability.invoked', {
+        'consumer_id': consumer_id,
+        'provider_id': provider_id,
+        'capability': capability,
+        'success': success,
+        'latency_ms': latency_ms
+    })
+
+    return jsonify({'message': 'Invocation tracked'}), 200
+
+
+@app.route('/api/connections/<service_id>')
+def get_connections(service_id: str):
+    """Get connections for a service (both as consumer and provider)"""
+    with registry_lock:
+        if service_id not in registry:
+            return jsonify({'error': 'Service not found'}), 404
+
+    with connections_lock:
+        # Find where this service is a consumer
+        as_consumer = []
+        if service_id in connections:
+            for conn in connections[service_id]:
+                provider_name = registry.get(conn.provider_id, {}).get('name', 'Unknown')
+                avg_latency = conn.total_latency_ms / conn.request_count if conn.request_count > 0 else 0
+                success_rate = conn.success_count / conn.request_count if conn.request_count > 0 else 0
+
+                as_consumer.append({
+                    'provider_id': conn.provider_id,
+                    'provider_name': provider_name,
+                    'capability': conn.capability,
+                    'request_count': conn.request_count,
+                    'success_rate': success_rate,
+                    'avg_latency_ms': avg_latency,
+                    'first_seen': conn.first_seen,
+                    'last_seen': conn.last_seen
+                })
+
+        # Find where this service is a provider
+        as_provider = []
+        for consumer_id, conn_list in connections.items():
+            for conn in conn_list:
+                if conn.provider_id == service_id:
+                    consumer_name = registry.get(consumer_id, {}).get('name', 'Unknown')
+                    avg_latency = conn.total_latency_ms / conn.request_count if conn.request_count > 0 else 0
+                    success_rate = conn.success_count / conn.request_count if conn.request_count > 0 else 0
+
+                    as_provider.append({
+                        'consumer_id': consumer_id,
+                        'consumer_name': consumer_name,
+                        'capability': conn.capability,
+                        'request_count': conn.request_count,
+                        'success_rate': success_rate,
+                        'avg_latency_ms': avg_latency,
+                        'first_seen': conn.first_seen,
+                        'last_seen': conn.last_seen
+                    })
+
+    return jsonify({
+        'service_id': service_id,
+        'service_name': registry.get(service_id, {}).get('name', 'Unknown'),
+        'consuming': as_consumer,
+        'providing': as_provider
+    })
+
+
+@app.route('/api/graph')
+def get_service_graph():
+    """Get the service dependency graph"""
+    with registry_lock:
+        # Build nodes (all services)
+        nodes = [
+            {
+                'id': service_id,
+                'name': service['name'],
+                'status': service['status'],
+                'capabilities': service['capabilities']
+            }
+            for service_id, service in registry.items()
+        ]
+
+    with connections_lock:
+        # Build edges (connections)
+        edges = []
+        for consumer_id, conn_list in connections.items():
+            for conn in conn_list:
+                avg_latency = conn.total_latency_ms / conn.request_count if conn.request_count > 0 else 0
+                success_rate = conn.success_count / conn.request_count if conn.request_count > 0 else 0
+
+                edges.append({
+                    'from': consumer_id,
+                    'to': conn.provider_id,
+                    'capability': conn.capability,
+                    'weight': conn.request_count,
+                    'avg_latency_ms': avg_latency,
+                    'success_rate': success_rate
+                })
+
+    return jsonify({
+        'nodes': nodes,
+        'edges': edges
+    })
+
+
 def init_registry():
     """Initialize the registry on startup"""
     global registry
@@ -474,6 +758,11 @@ if __name__ == '__main__':
     print("  POST   /api/discover          - Discover services by requirements")
     print("  GET    /api/stats             - Get registry statistics")
     print("  GET    /health                - Registry health check")
+    print("\nReal-Time & Observability:")
+    print("  GET    /api/events            - Server-Sent Events stream")
+    print("  POST   /api/track/invocation  - Track capability invocation")
+    print("  GET    /api/connections/<id>  - Get service connections")
+    print("  GET    /api/graph             - Get service dependency graph")
     print("=" * 50)
 
     # Use 127.0.0.1 by default for security (localhost only)

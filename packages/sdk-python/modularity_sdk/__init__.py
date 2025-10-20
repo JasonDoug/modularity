@@ -20,7 +20,7 @@ class ServiceInfo:
     """Information about a registered service"""
     id: str
     location: str
-    mode: str  # 'http', 'ipc', 'direct'
+    mode: str  # 'http', 'embedded', 'standalone' (embedded/standalone use IPC)
     capabilities: List[str]
     status: str
 
@@ -57,17 +57,63 @@ class ModuleInterface(ABC):
 class ServiceProxy:
     """Proxy for invoking remote services"""
 
-    def __init__(self, service_info: ServiceInfo):
+    def __init__(self, service_info: ServiceInfo, consumer_id: Optional[str] = None,
+                 registry_url: Optional[str] = None, enable_tracking: bool = True,
+                 tracking_token: Optional[str] = None):
         self.service_info = service_info
+        self.consumer_id = consumer_id
+        self.registry_url = registry_url
+        self.enable_tracking = enable_tracking
+        self.tracking_token = tracking_token
 
     def invoke(self, capability: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke a capability on the remote service"""
-        if self.service_info.mode == 'http':
-            return self._invoke_http(capability, params)
-        elif self.service_info.mode == 'ipc':
-            return self._invoke_ipc(capability, params)
-        else:
-            raise ValueError(f"Unsupported mode: {self.service_info.mode}")
+        start_time = time.time()
+        success = False
+        result = None
+
+        try:
+            if self.service_info.mode == 'http':
+                result = self._invoke_http(capability, params)
+            elif self.service_info.mode in ('embedded', 'standalone'):
+                # Embedded and standalone services use IPC-style invocation
+                result = self._invoke_ipc(capability, params)
+            else:
+                raise ValueError(
+                    f"Unsupported mode: {self.service_info.mode}. "
+                    f"Supported modes: 'http', 'embedded', 'standalone'"
+                )
+
+            success = True
+            return result
+        finally:
+            # Track invocation if enabled
+            latency_ms = (time.time() - start_time) * 1000
+            if self.enable_tracking and self.consumer_id and self.registry_url:
+                self._track_invocation(capability, success, latency_ms)
+
+    def _track_invocation(self, capability: str, success: bool, latency_ms: float):
+        """Track this invocation with the registry"""
+        try:
+            headers = {}
+            if self.tracking_token:
+                headers['X-Registry-Token'] = self.tracking_token
+
+            requests.post(
+                f"{self.registry_url}/api/track/invocation",
+                json={
+                    'consumer_id': self.consumer_id,
+                    'provider_id': self.service_info.id,
+                    'capability': capability,
+                    'success': success,
+                    'latency_ms': latency_ms
+                },
+                headers=headers,
+                timeout=2  # Short timeout to avoid blocking
+            )
+        except:
+            # Silently fail - don't break the main invocation flow
+            pass
 
     def _invoke_http(self, capability: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Invoke via HTTP"""
@@ -110,8 +156,12 @@ class ServiceProxy:
 class ServiceLocator:
     """Finds and connects to services providing specific capabilities"""
 
-    def __init__(self, registry_url: str = "http://localhost:5000"):
+    def __init__(self, registry_url: str = "http://localhost:5000", consumer_id: Optional[str] = None,
+                 enable_tracking: bool = True, tracking_token: Optional[str] = None):
         self.registry_url = registry_url
+        self.consumer_id = consumer_id
+        self.enable_tracking = enable_tracking
+        self.tracking_token = tracking_token
         self._cache = {}
         self._cache_ttl = 60  # Cache for 60 seconds
         self._cache_time = {}
@@ -140,7 +190,13 @@ class ServiceLocator:
                 status=service_data['status']
             )
 
-            proxy = ServiceProxy(service_info)
+            proxy = ServiceProxy(
+                service_info,
+                consumer_id=self.consumer_id,
+                registry_url=self.registry_url,
+                enable_tracking=self.enable_tracking,
+                tracking_token=self.tracking_token
+            )
             self._cache[capability_name] = proxy
             self._cache_time[capability_name] = time.time()
 
@@ -190,11 +246,21 @@ class ModularitySDK:
     """Main SDK class for ecosystem integration"""
 
     def __init__(self, manifest_path: str = "app.manifest.json",
-                 registry_url: str = "http://localhost:5000"):
+                 registry_url: str = "http://localhost:5000",
+                 enable_tracking: bool = True,
+                 tracking_token: Optional[str] = None):
         self.manifest_path = Path(manifest_path)
         self.manifest = self._load_manifest()
         self.registry_url = registry_url
-        self.locator = ServiceLocator(registry_url)
+        self.enable_tracking = enable_tracking
+        # Use provided token or fall back to environment variable
+        self.tracking_token = tracking_token or os.getenv('REGISTRY_TRACK_TOKEN')
+        self.locator = ServiceLocator(
+            registry_url,
+            consumer_id=self.manifest.get('id'),
+            enable_tracking=enable_tracking,
+            tracking_token=self.tracking_token
+        )
         self.event_bus = EventBus()
         self.config = self._load_config()
         self._http_server = None
